@@ -20,7 +20,8 @@ command you can re-run, and every limitation is stated rather than hidden.
 
 ## Demo
 
-![Pulse dashboard — incident investigation view](docs/results/plots/dashboard_screenshot.png)
+<img width="1600" height="900" alt="image" src="https://github.com/user-attachments/assets/7a22a7fe-058a-46f2-83b8-304238457daa" />
+
 
 A real, completed `eval_fast` run, viewed through the Streamlit dashboard:
 incident navigator on the left, selected incident's timeline, top-3 ranked
