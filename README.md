@@ -18,12 +18,7 @@ It exists to demonstrate an ambiguous problem turned into a well-engineered,
 honestly-measured Python system: every number below was produced by a
 command you can re-run, and every limitation is stated rather than hidden.
 
-See [docs/milestones.md](docs/milestones.md) for the implementation roadmap
-and [progress.md](progress.md) for full session-by-session project history.
-
 ## Demo
-
-![Pulse dashboard — incident investigation view](docs/results/plots/dashboard_screenshot.png)
 
 A real, completed `eval_fast` run, viewed through the Streamlit dashboard:
 incident navigator on the left, selected incident's timeline, top-3 ranked
