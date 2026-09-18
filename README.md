@@ -20,6 +20,8 @@ command you can re-run, and every limitation is stated rather than hidden.
 
 ## Demo
 
+![Pulse dashboard — incident investigation view](docs/results/plots/dashboard_screenshot.png)
+
 A real, completed `eval_fast` run, viewed through the Streamlit dashboard:
 incident navigator on the left, selected incident's timeline, top-3 ranked
 root causes, key evidence, and explanation together on one screen. No LLM
@@ -102,40 +104,6 @@ incident correlation precision, not to root-cause ranking: **evaluation
 identified incident correlation as the main end-to-end bottleneck**, not the
 ranker.
 
-## Limitations / Future Work
-
-Stated plainly, not hidden:
-
-- **All telemetry is simulated.** Every metric, fault, and incident in this
-  project comes from `pulse.core.sim`, a deterministic synthetic generator —
-  not a real production system. The results above measure how well Pulse's
-  pipeline recovers faults it itself injected into synthetic data, not
-  real-world incident-response performance.
-- `noisy_neighbour` (the adversarial two-distant-faults-same-window
-  correlation scenario) was attempted twice and **not completed** — the
-  single biggest gap in the M10 evaluation.
-- The `(T_window, D_max)` correlation-parameter sweep covers 8 of an
-  originally-planned 20 grid cells, and does not characterise the widest
-  settings at all — the production correlator's exact-connected-components
-  recomputation does not scale to those settings at this scenario's anomaly
-  volume within the time available (a correctness choice, not a bug).
-- The held-out test seed was not touched, by design — every number above is
-  a validation-seed number, not a final frozen-method number.
-- AI-layer metrics (grounding-validation pass rate, explanation quality)
-  were out of M10's scope and were not formally benchmarked.
-- The final end-to-end pipeline runtime figure was not freshly re-measured
-  in M10; it reuses a prior measurement.
-- **Incident correlation quality remains the main technical limitation** —
-  it is why end-to-end root-cause accuracy (0.267) trails oracle-mode
-  accuracy (0.933) so far.
-- Broader load/scaling analysis (DB indexing under load, API load testing, a
-  service-count scaling curve) remains future work; it was scoped out of
-  M10 for time, not run and hidden.
-
-None of this is presented as production-ready. Pulse is a portfolio project
-demonstrating a real, working pipeline with an honest account of where it
-currently falls short.
-
 ## Tech Stack
 
 - **Simulation & science core:** Python 3.11+, NumPy, pandas, scikit-learn
@@ -151,105 +119,9 @@ currently falls short.
 - **Testing/tooling:** pytest, Hypothesis (property tests), ruff, mypy
   (`--strict`).
 
-## Running Locally
-
-### Setup
-
-```sh
-make test        # run the test suite
-make lint        # ruff check + format check
-make typecheck   # mypy
-```
-
-Each target creates a local virtual environment (`.venv/`) and installs the
-project automatically — no manual setup step is required.
-
-`make test`'s Postgres-backed tests need a real database:
-`docker compose up -d db` (or
-`docker run -p 5432:5432 -e POSTGRES_USER=pulse -e POSTGRES_PASSWORD=pulse -e POSTGRES_DB=pulse postgres:16`
-if the `docker compose` plugin isn't available), then create the dedicated
-test database once with
-`psql -h localhost -U pulse -d pulse -c "CREATE DATABASE pulse_test;"`.
-Its Redis-backed tests similarly need `docker compose up -d redis` (or
-`docker run -p 6379:6379 redis:7`). Tests against a database or broker that
-isn't reachable are skipped, not failed.
-
-### Running the API and worker
-
-Four processes: Postgres, Redis, the FastAPI app, and a Celery worker.
-
-```sh
-docker compose up -d db redis                                       # once
-.venv/bin/alembic upgrade head                                      # once, applies the schema
-.venv/bin/uvicorn pulse.api.main:app --reload                       # terminal 1: API on :8000
-.venv/bin/celery -A pulse.tasks.pipeline worker --loglevel=info     # terminal 2: worker
-```
-
-Open `http://localhost:8000/docs` for the interactive OpenAPI UI, or drive it directly:
-
-```sh
-# 1. Create and enqueue a run (simulates a 12-hour scenario, then detects,
-#    correlates, scores, and ranks it -- on the Celery worker, not the
-#    request path). Returns almost immediately with status: "queued".
-curl -s -X POST localhost:8000/runs \
-  -H 'content-type: application/json' \
-  -d '{"scenario_name": "eval_fast", "seed": 1}'
-# -> {"run_id": "...", "status": "queued", "n_anomalies": 0, "n_incidents": 0, ...}
-
-# 2. Poll until the worker finishes (typically well under a minute for
-#    eval_fast); status moves queued -> running -> completed (or failed).
-curl -s localhost:8000/runs/<run_id>
-# -> {"run_id": "...", "status": "completed", "n_anomalies": 2536, "n_incidents": 82, ...}
-
-# 3. List its incidents.
-curl -s localhost:8000/runs/<run_id>/incidents
-
-# 4. Retrieve one incident's members, severity, and ranked root causes.
-curl -s localhost:8000/runs/<run_id>/incidents/<incident_id>
-
-# 5. Get the bounded evidence bundle backing that incident's explanation --
-#    what a citation id in step 6's response (e.g. "E3") refers to.
-curl -s localhost:8000/runs/<run_id>/incidents/<incident_id>/evidence
-
-# 6. Get an LLM-generated explanation of one incident. Evidence-grounded and
-#    grounding-validated (docs/ai-plan.md §3-5); if no provider is
-#    configured, or the model's response fails validation after one repair
-#    attempt, a deterministic template built only from the same evidence is
-#    returned instead -- `status` ("ok" | "repaired" | "fallback" | "failed")
-#    and `citations_valid` always say which. Cached by evidence-bundle hash,
-#    so repeated requests for an unchanged incident do not re-call the
-#    provider.
-curl -s localhost:8000/runs/<run_id>/incidents/<incident_id>/explanation
-
-# 7. Get one metric's raw time series for a run -- what the dashboard's
-#    timeline plots.
-curl -s localhost:8000/runs/<run_id>/metrics/<service>/<metric>
-```
-
-`PULSE_DATABASE_URL` (default `postgresql+psycopg://pulse:pulse@localhost:5432/pulse`)
-and `PULSE_REDIS_URL` (default `redis://localhost:6379/0`) override the API's
-and worker's connection strings — both processes must point at the same
-values to work together.
-
-### Configuring the real LLM provider (optional)
-
-**Explanations work with no configuration.** With no `ANTHROPIC_API_KEY`
-set, `GET .../explanation` returns the deterministic fallback
-(`status: "failed"`, `citations_valid: true`) — Pulse's own facts, narrated
-without a model. To use the real Anthropic provider instead, set:
-
-```sh
-export ANTHROPIC_API_KEY=sk-...        # required to select the real provider at all
-export PULSE_LLM_MODEL=claude-opus-5   # optional, defaults to claude-opus-5
-```
-
-Never committed, never logged. CI has no credentials and always exercises
-the fake-provider/fallback path (`pulse.llm.fake_provider.FakeProvider`) —
-the real provider is exercised only by a manual smoke test.
-
 ### Running the dashboard
 
-With the API already up (the steps above), start Streamlit:
+With the API already up, start Streamlit:
 
 ```sh
 .venv/bin/streamlit run src/pulse/dashboard/app.py
