@@ -75,9 +75,7 @@ HTTP (§2.1, mechanically checked by `tests/test_architecture.py`).
 
 ## Results
 
-All numbers below are measured, not targets (see
-[docs/evaluation.md](docs/evaluation.md) for full methodology, seed set, and
-every target-vs-measured comparison). Reported over 5 independently-seeded
+All numbers below are measured, not targets. Reported over 5 independently-seeded
 validation runs (`val.yaml`, eval seeds 2002-2006) unless stated otherwise.
 **The held-out test seed has not been touched** — these are validation-seed
 numbers, not final frozen-method numbers.
